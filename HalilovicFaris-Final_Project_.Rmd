@@ -1,0 +1,175 @@
+---
+title: "Final_Project_Check_In"
+author: "Faris Halilovic"
+date: "2026-10-04"
+output: pdf_document
+---
+install.packages("BiocManager")
+BiocManager::install("ComplexHeatmap")
+install.packages("circlize")
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(ComplexHeatmap)
+library(circlize)
+library(knitr)
+```
+
+Question 1
+Data Preparation:
+Download the Sample RNA-seq Count Matrix and associated Metadata.
+Ensure that you have both the count matrix (counts.csv) and the metadata file 
+(meta_data.csv) available for your analysis - links below.
+Gene Selection and Summary Statistics:
+
+```{r}
+count <- read.csv("~/Downloads/counts.csv", row.names = 1, check.names = FALSE) 
+#Bring in the count
+data <- read.csv("~/Downloads/meta_data.csv", row.names = 1) #Read in the metatdata
+
+id <- sub("\\..*", "", rownames(count)) #This removes the version number
+esr1 <- as.numeric(count[id == "ENSG00000091831", ]) #Counts ESR1 
+erbb2 <- as.numeric(count[id == "ENSG00000141736", ]) #Counts ERBB2
+esr1_log <- log2(esr1 + 1) #Log2 transform
+erbb2_log <- log2(erbb2 + 1)
+
+dir.create("figures", showWarnings = FALSE) #Folder for LaTeX
+
+```
+\newpage
+Question 2
+Gene Selection and Summary Statistics:
+A) Select One Gene: choose a gene from the dataset that interests you.
+B) Generate Summary Statistics: Using the count data from the selected gene, 
+compute and report summary statistics, such as mean, median, standard deviation, 
+minimum, and maximum. 
+
+```{r}
+
+dpm1 <- as.numeric(count[id == "ENSG00000000419", ])
+
+summary_statistics <- data.frame( #These are the summary statistics for the genes
+  Gene = c("DPM1", "ESR1", "ERBB2"),
+  Mean = c(mean(dpm1), mean(esr1), mean(erbb2)),
+  Median = c(median(dpm1), median(esr1), median(erbb2)),
+  SD = c(sd(dpm1), sd(esr1), sd(erbb2)),
+  Min = c(min(dpm1), min(esr1), min(erbb2)),
+  Max = c(max(dpm1), max(esr1), max(erbb2))
+)
+
+kable(summary_statistics, digits = 1,
+      caption = "Sumamry statistics for DPM1, ESR1 & ERBB2")
+```
+\newpage
+3.Visualization:
+A) Create a Histogram: Use ggplot2 to generate a histogram of the count data for the selected gene. This visualization should effectively display the distribution of the counts. 
+B) Create a Scatter Plot: Select a second gene from the dataset. Create a scatter plot using ggplot2 to compare the count data of the two selected genes. 
+C) Create a Violin Plot: Select one covariate from your metadata. Using the count data from the first gene and the selected covariate, generate a violin plot that illustrates the distribution of count data based on the covariate. For example, if you choose “primary_diagnosis”, your plot should display a violin plot for each level in “primary_diagnosis”.
+D) Create a Heatmap: 
+Select 10 genes: Choose a set of 10 different genes from the count matrix for your heatmap.
+Generate a Heatmap: Use the ComplexHeatmap package in R to create a heatmap of the count data for the selected genes. 
+Add an Annotation Bar: Include an annotation bar reflecting your chosen covariate for further context and interpretation of the data.
+
+```{r}
+histogram_plot <- ggplot(data.frame(count = esr1_log), aes(x = count)) + #Selected ESR1
+  geom_histogram(bins = 25, fill = "blue", #25 counts, blue fill
+                 color = "black", alpha = 0.6) + #Black outline
+  labs(title = "Distribution of ESR1", #Title is gene name
+       x = "ESR1 log2", #X-axis label
+       y = "Frequency") + #Y-axis labe
+  theme_minimal() #Clean theme
+histogram_plot
+
+ggsave("figures/histogram.png", histogram_plot, width = 6, height = 4, dpi = 300)
+#Code for LaTeX report 
+```
+
+\newpage
+```{r}
+r <- round(cor(esr1_log, erbb2_log), 2)
+
+scatter_plot <- ggplot(data.frame(ESR1 = esr1_log, ERBB2 = erbb2_log), #1 row
+                       #per sample
+                       aes(x = ESR1, y = ERBB2)) +
+  geom_point(alpha = 0.3, color = "blue") +#Blue transparent points
+  geom_smooth(method = "lm", formula = y ~ x, color = "red") + #Linear trend line
+  labs(title = paste0("ESR1 vs. ERBB2 Expression (r = ", r, ")"), #Title and labels
+       x = "ESR1 log2",
+       y = "ERBB2 log2") +
+  theme_minimal()
+
+scatter_plot
+ggsave("figures/scatter_plot.png", scatter_plot, width = 6, height = 5, dpi = 300)
+#Save for the LaTeX report 
+```
+
+\newpage
+```{r violin, fig.width=8, fig.height=5, message=FALSE, warning=FALSE}
+
+box_data <- data.frame( #This is the data for the box plot
+  Expression = esr1_log, #ESR1
+  Subtype = data$paper_BRCA_Subtype_PAM50) %>% #PAM50 subtype
+  filter(!is.na(Subtype)) #Filter out samples without label
+
+box_plot <- ggplot(box_data, aes(x = Subtype, y = Expression, fill = Subtype)) +
+  #one box per type
+  geom_violin(alpha = 0.4) + #Violin plot
+  geom_boxplot(width = 0.15, outlier.size = 0.8) + #Box plot on top
+  labs(title = "ESR1 Expresions by PAM50 Subtype", #Title and labels
+       x = "PAM50 Subtype",
+       y = "ESR1 log2") +
+  theme_minimal() +
+  theme(legend.position = "none") #removes repeats 
+
+box_plot
+ggsave("figures/box_plot.png", box_plot, width = 6, height = 5, dpi = 300)
+#Save file for LaTeX
+
+
+```
+
+\newpage
+```{r heatmap, message=FALSE, warning=FALSE, fig.width=11, fig.height=8}
+#Utilized https://jokergoo.github.io/ComplexHeatmap-reference/book/ as a source
+
+genes <- c(ESR1 = "ENSG00000091831", ERBB2 = "ENSG00000141736", #Picking 10 genes 
+           GATA3 = "ENSG00000107485", FOXA1 = "ENSG00000129514",
+           PGR = "ENSG00000082175", MKI67 = "ENSG00000148773",
+           KRT5 = "ENSG00000186081", KRT17 = "ENSG00000128422",
+           CDH1 = "ENSG00000039068", EGFR = "ENSG00000146648")
+keep <- !is.na(data$paper_BRCA_Subtype_PAM50) #Samples with a label
+
+mat <- log2(as.matrix(count[match(genes, id), keep]) + 1) #Picks the 10 genes, 
+#log2 transform
+rownames(mat) <- names(genes) #Gene symbols as labels 
+mat <- t(scale(t(mat))) #"Z-score"
+
+column_h <- HeatmapAnnotation( #Annotation bars
+  Subtype = data$paper_BRCA_Subtype_PAM50[keep],
+  `Sample type` = data$sample_type[keep])
+
+heat <- Heatmap(mat, name = "Z-score", top_annotation = column_h,
+                show_column_names = FALSE)
+
+heat
+png("figures/heatmap.png", width = 2400, height = 1600, res = 300)
+draw(heat)
+invisible(dev.off())
+
+
+``` 
+\newpage
+```{r density plot, message=FALSE, warning=FALSE, fig.width=11, fig.height=8}
+
+density_plot <- ggplot(box_data, aes(x = Expression, fill = Subtype)) + 
+  #Continuing the box plot data 
+  geom_density(alpha = 0.5) + # Smooth transition 
+  labs(title = "ESR1 Expression Density by PAM50 Subtype", #Title and labels 
+       x = "ESR1 log2", y = "Density") +
+  theme_minimal()
+
+density_plot
+ggsave("figures/density_plot.png", density_plot, width = 6, height = 5, dpi = 300)
+
+```
+
